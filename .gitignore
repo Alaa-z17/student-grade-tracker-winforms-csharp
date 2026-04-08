@@ -1,0 +1,39 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet packages
+packages/
+*.nupkg
+
+# Test results
+TestResults/
+
+# Logs
+*.log
+*.tmp
+
+# OS generated files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Backup files
+*~
+*.bak
+
+# Publish folder
+publish/
