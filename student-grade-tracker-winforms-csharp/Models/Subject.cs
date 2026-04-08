@@ -2,8 +2,14 @@
 
 public class Subject
 {
-    public string Name { get; set; } = string.Empty;
-    public List<double> Grades { get; set; } = new();
+    public string Name { get; set; }
+    public List<Grade> Grades { get; set; }
 
-    public double Average => Grades.Count == 0 ? 0 : Grades.Average();
+    public Subject(string name)
+    {
+        Name = name;
+        Grades = new List<Grade>();
+    }
+
+    public double AverageGrade => Grades.Count == 0 ? 0 : Grades.Average(g => g.Value);
 }

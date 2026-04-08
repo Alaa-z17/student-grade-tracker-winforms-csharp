@@ -2,6 +2,6 @@
 
 public interface IGradable
 {
-    double OverallAverage { get; }
-    string GetGradeSummary();
+    double GetAverage();
+    string GetLetterGrade();
 }

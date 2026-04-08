@@ -1,126 +1,114 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using StudentGradeTracker.Models;
 
 namespace StudentGradeTracker.Services;
 
-/// <summary>
-/// Provides encrypted JSON persistence for student data using AES-256 encryption.
-/// All data is saved in an encrypted format and automatically decrypted on load.
-/// </summary>
 public static class JsonStorageService
 {
-    // File path where encrypted student data is stored
-    private static readonly string FilePath = "students.json";
+    private static readonly string FilePath;
+    private static readonly byte[] Key;
+    private static readonly byte[] IV;
 
-    // AES-256 key (32 bytes) and IV (16 bytes) - stored as Base64 strings.
-    // 🔐 IMPORTANT: In a real application, never hardcode keys in source code.
-    // Instead, use environment variables, user password derivation, or Windows DPAPI.
-    // These values are placeholders - generate your own using the helper below.
-    /*
-            byte[] key = RandomNumberGenerator.GetBytes(32);
-            byte[] iv = RandomNumberGenerator.GetBytes(16);
-            Console.WriteLine($"Key: {Convert.ToBase64String(key)}");
-            Console.WriteLine($"IV:  {Convert.ToBase64String(iv)}");
-     */
-    private static readonly byte[] Key = Convert.FromBase64String("oWe8XBfvhxalKadhOxhpO7N1zq9VMuE6Hk+MwLagDsI=");
-    private static readonly byte[] IV = Convert.FromBase64String("O6fS7BvmzW3H1vYV8jyczg==");
-
-    /// <summary>
-    /// Saves the list of students to an encrypted JSON file.
-    /// </summary>
-    /// <param name="students">The list of students to save.</param>
-    public static void SaveStudents(List<Student> students)
+    static JsonStorageService()
     {
-        // Serialize to pretty-printed JSON
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        string json = JsonSerializer.Serialize(students, options);
+        string exeDir = AppContext.BaseDirectory;
+        var config = new ConfigurationBuilder()
+            .SetBasePath(exeDir)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
 
-        // Encrypt the JSON string
-        byte[] encrypted = EncryptStringToBytes(json, Key, IV);
+        string fileName = config["AppSettings:DataFile"] ?? "students.json";
+        FilePath = Path.Combine(exeDir, fileName);
 
-        // Write encrypted bytes to disk
-        File.WriteAllBytes(FilePath, encrypted);
+        string keyBase64 = config["Encryption:Key"] ?? throw new InvalidOperationException("Encryption:Key missing");
+        string ivBase64 = config["Encryption:IV"] ?? throw new InvalidOperationException("Encryption:IV missing");
+
+        Key = Convert.FromBase64String(keyBase64);
+        IV = Convert.FromBase64String(ivBase64);
+
+        if (Key.Length != 32) throw new InvalidOperationException("Encryption key must be 32 bytes.");
+        if (IV.Length != 16) throw new InvalidOperationException("Encryption IV must be 16 bytes.");
     }
 
-    /// <summary>
-    /// Loads the list of students from an encrypted JSON file.
-    /// </summary>
-    /// <returns>List of students, or an empty list if the file doesn't exist.</returns>
+    public static void SaveStudents(List<Student> students)
+    {
+        if (students == null) throw new ArgumentNullException(nameof(students));
+
+        try
+        {
+            string? dir = Path.GetDirectoryName(FilePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            string json = JsonSerializer.Serialize(students, new JsonSerializerOptions { WriteIndented = true });
+            byte[] encrypted = EncryptStringToBytes(json, Key, IV);
+            File.WriteAllBytes(FilePath, encrypted);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to save student data to {FilePath}: {ex.Message}", ex);
+        }
+    }
+
     public static List<Student> LoadStudents()
     {
         if (!File.Exists(FilePath))
             return new List<Student>();
 
-        // Read encrypted bytes
-        byte[] encrypted = File.ReadAllBytes(FilePath);
-
-        // Decrypt back to JSON string
-        string json = DecryptStringFromBytes(encrypted, Key, IV);
-
-        // Deserialize to List<Student>, return empty list if null
-        return JsonSerializer.Deserialize<List<Student>>(json) ?? new List<Student>();
+        try
+        {
+            byte[] encrypted = File.ReadAllBytes(FilePath);
+            string json = DecryptStringFromBytes(encrypted, Key, IV);
+            return JsonSerializer.Deserialize<List<Student>>(json) ?? new List<Student>();
+        }
+        catch (CryptographicException)
+        {
+            try
+            {
+                string json = File.ReadAllText(FilePath);
+                var students = JsonSerializer.Deserialize<List<Student>>(json) ?? new List<Student>();
+                SaveStudents(students);
+                return students;
+            }
+            catch
+            {
+                string backupPath = FilePath + ".corrupt";
+                File.Move(FilePath, backupPath);
+                MessageBox.Show($"The existing student data file was corrupt or encrypted with a different key.\nIt has been backed up to {backupPath}\nStarting with an empty student list.",
+                    "Data Recovery", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return new List<Student>();
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to load student data from {FilePath}: {ex.Message}", ex);
+        }
     }
 
-    // ======================== AES Encryption Helpers ========================
-
-    /// <summary>
-    /// Encrypts a plaintext string using AES-256 (CBC mode, PKCS7 padding).
-    /// </summary>
-    /// <param name="plainText">The text to encrypt.</param>
-    /// <param name="key">32-byte AES key.</param>
-    /// <param name="iv">16-byte initialization vector.</param>
-    /// <returns>Encrypted byte array.</returns>
     private static byte[] EncryptStringToBytes(string plainText, byte[] key, byte[] iv)
     {
-        using (Aes aes = Aes.Create())
-        {
-            aes.Key = key;
-            aes.IV = iv;
-            aes.Mode = CipherMode.CBC;
-            aes.Padding = PaddingMode.PKCS7;
-
-            ICryptoTransform encryptor = aes.CreateEncryptor();
-            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-            return encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-        }
+        using Aes aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        using ICryptoTransform encryptor = aes.CreateEncryptor();
+        byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
+        return encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
     }
 
-    /// <summary>
-    /// Decrypts a byte array back to the original plaintext string using AES-256.
-    /// </summary>
-    /// <param name="cipherText">Encrypted byte array.</param>
-    /// <param name="key">32-byte AES key (must match encryption key).</param>
-    /// <param name="iv">16-byte initialization vector (must match encryption IV).</param>
-    /// <returns>Decrypted plaintext string.</returns>
-    /// <exception cref="CryptographicException">Thrown if decryption fails (wrong key/IV/corrupted data).</exception>
     private static string DecryptStringFromBytes(byte[] cipherText, byte[] key, byte[] iv)
     {
-        using (Aes aes = Aes.Create())
-        {
-            aes.Key = key;
-            aes.IV = iv;
-            aes.Mode = CipherMode.CBC;
-            aes.Padding = PaddingMode.PKCS7;
-
-            ICryptoTransform decryptor = aes.CreateDecryptor();
-            byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
-            return Encoding.UTF8.GetString(plainBytes);
-        }
+        using Aes aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        using ICryptoTransform decryptor = aes.CreateDecryptor();
+        byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+        return Encoding.UTF8.GetString(plainBytes);
     }
-
-    // ======================== Key Generation Helper (for setup) ========================
-    // Uncomment and run this method ONCE to generate your own random Key and IV.
-    // Then copy the Base64 strings into the static fields above.
-    // After that, either comment or delete this method.
-    /*
-    public static void GenerateNewKeyAndIv()
-    {
-        byte[] key = RandomNumberGenerator.GetBytes(32);
-        byte[] iv  = RandomNumberGenerator.GetBytes(16);
-        Console.WriteLine($"Key: {Convert.ToBase64String(key)}");
-        Console.WriteLine($"IV:  {Convert.ToBase64String(iv)}");
-    }
-    */
 }

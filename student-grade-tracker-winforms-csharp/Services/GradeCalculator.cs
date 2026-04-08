@@ -1,24 +1,19 @@
-﻿using StudentGradeTracker.Models;
-
-namespace student_grade_tracker_winforms_csharp.Services;
+﻿namespace StudentGradeTracker.Services;
 
 public static class GradeCalculator
 {
     public static string GetLetterGrade(double average)
     {
-        return average switch
-        {
-            >= 90 => "A",
-            >= 80 => "B",
-            >= 70 => "C",
-            >= 60 => "D",
-            _ => "F"
-        };
+        if (average >= 90) return "A";
+        if (average >= 80) return "B";
+        if (average >= 70) return "C";
+        if (average >= 60) return "D";
+        return "F";
     }
 
-    public static double CalculateClassAverage(List<Student> students)
+    public static double CalculateAverage(List<double> grades)
     {
-        if (students == null || students.Count == 0) return 0;
-        return students.Average(s => s.OverallAverage);
+        if (grades == null || grades.Count == 0) return 0;
+        return grades.Average();
     }
 }

@@ -1,31 +1,65 @@
-﻿using student_grade_tracker_winforms_csharp.Services;
+﻿using System.Text;
+using System.Text.Json.Serialization;
 using StudentGradeTracker.Interfaces;
+using StudentGradeTracker.Services;
+using System.Threading;
 
 namespace StudentGradeTracker.Models;
 
-public class Student : BasePerson, IGradable
+public class Student : BasePerson, IGradable, IExportable
 {
-    public int Id { get; set; }
-    public List<Subject> Subjects { get; set; } = new();
+    private static int _nextId = 1;
 
-    // Composition: Student has a list of grades per subject
-    public double OverallAverage => Subjects.Count == 0 ? 0 : Subjects.Average(s => s.Average);
+    public int Id { get; private set; }
+    public List<Subject> Subjects { get; set; }
 
-    // Nested class example
-    public class GradeBreakdown
+    public Student(string name) : base(name)
     {
-        public string ?SubjectName { get; set; }
-        public double Average { get; set; }
-        public string LetterGrade => GradeCalculator.GetLetterGrade(Average);
+        Id = Interlocked.Increment(ref _nextId);
+        Subjects = new List<Subject>();
     }
 
-    public List<GradeBreakdown> GetBreakdown() => Subjects.Select(s => new GradeBreakdown
+    [JsonConstructor]
+    public Student(int id, string name) : base(name)
     {
-        SubjectName = s.Name,
-        Average = s.Average
-    }).ToList();
+        Id = id;
+        int current;
+        do
+        {
+            current = _nextId;
+            if (id < current) break;
+        } while (Interlocked.CompareExchange(ref _nextId, id + 1, current) != current);
+        Subjects = new List<Subject>();
+    }
 
-    public override string GetReport() => $"{Name} (ID: {Id}) - Overall: {OverallAverage:F2}";
+    public double OverallAverage => Subjects.Count == 0 ? 0 : Subjects.Average(s => s.AverageGrade);
+    public string LetterGrade => GradeCalculator.GetLetterGrade(OverallAverage);
 
-    public string GetGradeSummary() => $"Student: {Name}, Average: {OverallAverage:F2}, Grade: {GradeCalculator.GetLetterGrade(OverallAverage)}";
+    public override string GetInfo() => $"{Name} – Average: {OverallAverage:F2} ({LetterGrade})";
+    public double GetAverage() => OverallAverage;
+    public string GetLetterGrade() => LetterGrade;
+
+    public string ExportToCsv()
+    {
+        var sb = new StringBuilder();
+        foreach (var subject in Subjects)
+            foreach (var grade in subject.Grades)
+                sb.AppendLine($"{Name},{subject.Name},{grade.Value}");
+        return sb.ToString();
+    }
+
+    public class GradeBreakdown
+    {
+        public string SubjectName { get; set; } = string.Empty;
+        public double Average { get; set; }
+        public List<double> Grades { get; set; } = new();
+    }
+
+    public List<GradeBreakdown> GetBreakdown() =>
+        Subjects.Select(s => new GradeBreakdown
+        {
+            SubjectName = s.Name,
+            Average = s.AverageGrade,
+            Grades = s.Grades.Select(g => g.Value).ToList()
+        }).ToList();
 }

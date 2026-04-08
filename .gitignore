@@ -37,3 +37,8 @@ desktop.ini
 
 # Publish folder
 publish/
+
+
+students.json
+encryption.key
+encryption.iv
