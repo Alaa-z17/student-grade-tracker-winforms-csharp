@@ -1,5 +1,5 @@
-﻿using StudentGradeTracker.Interfaces;
-using StudentGradeTracker.Utilities;
+﻿using student_grade_tracker_winforms_csharp.Services;
+using StudentGradeTracker.Interfaces;
 
 namespace StudentGradeTracker.Models;
 

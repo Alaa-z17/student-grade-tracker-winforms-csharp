@@ -1,4 +1,6 @@
-﻿namespace StudentGradeTracker.Utilities;
+﻿using StudentGradeTracker.Models;
+
+namespace student_grade_tracker_winforms_csharp.Services;
 
 public static class GradeCalculator
 {
@@ -14,7 +16,7 @@ public static class GradeCalculator
         };
     }
 
-    public static double CalculateClassAverage(List<Models.Student> students)
+    public static double CalculateClassAverage(List<Student> students)
     {
         if (students == null || students.Count == 0) return 0;
         return students.Average(s => s.OverallAverage);
